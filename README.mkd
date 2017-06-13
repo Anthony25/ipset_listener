@@ -1,0 +1,46 @@
+IPset listener
+=============
+
+Handles a white-list in ipset, through a hash:mac set by default, containing
+a set of mac addresses.
+
+
+Dependencies
+------------
+
+  * rustc, tested with version 1.7
+  * cargo, tested with version 0.8
+
+These dependencies are needed to compile the project, but are not needed if you
+just want to run it.
+
+
+Configuration
+-------------
+
+Copy the example file `ipset_listener.conf` as `/etc/ipset_listener.conf`,
+then adapt it to your setup. Each option in the example is documented.
+
+
+Usage
+-----
+
+Just compile the project with `cargo build --release`, and then start the
+binary `ipset_listener`. It should spawn a server, listening with a TCPSocket
+on the addresses/ports you have set in your configuration file.
+
+Then, from any client connected to your server, you can manage your white-list
+with specific commands.
+
+
+Commands
+--------
+
+  * `a <mac_address>`: add the mac address to the white-list
+  * `d <mac_address>`: delete the mac address of the white-list
+
+
+Contributors
+------------
+
+  * [Anthony Ruhier](mailto://anthony.ruhier@gmail.com)

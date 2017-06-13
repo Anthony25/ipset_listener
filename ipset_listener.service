@@ -1,0 +1,13 @@
+[Unit]
+Description=ipset listener to block/unblock mac addresses
+After=syslog.target
+
+[Service]
+ExecStart=/usr/local/bin/ipset_listener
+Restart=always
+Type=simple
+StandardError=syslog
+KillSignal=SIGQUIT
+
+[Install]
+WantedBy=multi-user.target
