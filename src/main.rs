@@ -4,7 +4,6 @@ extern crate log;
 extern crate lazy_static;
 extern crate config;
 extern crate regex;
-extern crate rustc_serialize;
 
 mod conf;
 mod multisocketaddr;
@@ -114,7 +113,7 @@ fn spawn_ipset(ipset_args: &[&str]) -> Result<(), String> {
 fn filter_mac(output: &str) -> Result<String, String> {
     let re_mac: Regex = Regex::new(RE_MAC_PATTERN).unwrap();
     let mac_addr = match re_mac.captures(output) {
-        Some(capt) => capt.name("mac").unwrap_or(""),
+        Some(capt) => capt.name("mac").unwrap().as_str(),
         None => "",
     };
     match mac_addr {
@@ -165,7 +164,7 @@ fn get_mac<'a>(ip: &'a str) -> Result<String, String> {
 /// Checks if the response is correct and parse it
 fn compute_response(response: &String, mut s: &TcpStream) {
     let re_action: Regex = Regex::new(
-        r"^(?P<action>[:alpha:]) *(?P<arg>.*)$"
+        r"^(?P<action>[[:alpha:]]) *(?P<arg>.*)$"
     ).unwrap();
     let re_mac: Regex = Regex::new(RE_MAC_PATTERN).unwrap();
 
@@ -176,14 +175,14 @@ fn compute_response(response: &String, mut s: &TcpStream) {
     let mut bad_request: bool = false;
     match re_action.captures(response.as_str()) {
         Some(capt) => {
-            let action = capt.name("action").unwrap_or("");
-            let arg = capt.name("arg").unwrap_or("");
+            let action = capt.name("action").unwrap().as_str();
+            let arg = capt.name("arg").unwrap().as_str();
             info!("{:?}", (action, arg));
 
             match action {
-                act_ipset @ "a" | act_ipset@ "d" => {
+                act_ipset @ "a" | act_ipset @ "d" => {
                     let mac_addr = match re_mac.captures(arg) {
-                        Some(mac_capt) => mac_capt.name("mac").unwrap_or(""),
+                        Some(mac_capt) => mac_capt.name("mac").unwrap().as_str(),
                         None => { bad_request = true; "" },
                     };
                     let cmd = match act_ipset {
