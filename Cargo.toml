@@ -4,7 +4,7 @@ version = "0.1.0"
 authors = ["Anthony Ruhier <anthony.ruhier@gmail.com>"]
 
 [dependencies]
-config = "0.1.3"
+config = "0.5.1"
 env_logger = "0.3"
 lazy_static = "0.1.16"
 log = "0.3.5"

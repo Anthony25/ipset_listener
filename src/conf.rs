@@ -1,74 +1,100 @@
 
 use std::path::Path;
 use config as libconfig;
-use config::types::{Value, ScalarValue};
+use config::{Value, Config};
 
 static CONFIG_FILE: &'static str = "/etc/ipset_listener.conf";
 
 /// Store an IPSet set
-pub struct SetIpset<'a> {
-    pub name: &'a str,
-    pub type_name: &'a str,
+pub struct SetIpset {
+    pub name: String,
+    pub type_name: String,
     pub maxelem: u64,
 }
 
+/// Store an IPSet set
+pub struct GlobalConfig {
+    /// Limit the server to a certain number of threads
+    pub limit_threads: u32,
+    /// Binary to call when spawning ipset
+    pub ipset_bin: String,
+    /// Address to listen on
+    pub listen_addr: Vec<String>,
+    /// IPSet set to use
+    pub registered_users_set: SetIpset
+}
 
-fn config_from_file() -> libconfig::types::Config{
-    let my_conf = libconfig::reader::from_file(Path::new(CONFIG_FILE));
-    my_conf.is_ok();
 
-    let configuration = my_conf.expect("Error in configuration");
-    configuration
+fn config_from_file() -> Config{
+    let mut conf = Config::new();
+    if Path::new(CONFIG_FILE).is_file() {
+        // Not using `.required(false)`, as it does returns an error if parsing
+        // failed
+        conf.merge(
+            libconfig::File::new(
+                CONFIG_FILE, libconfig::FileFormat::Yaml
+            )
+        ).unwrap();
+    }
+
+    setup_default_values(conf)
+}
+
+fn setup_default_values(mut conf: Config) -> Config{
+    conf.set_default("threads", 1000).unwrap();
+    conf.set_default("ipset_bin", "ipset").unwrap();
+    conf.set_default(
+        "listen_addr", vec![ "127.0.0.1:8000", "[::1]:8000" ]
+    ).unwrap();
+    conf.set_default(
+        "registered_users_set.name", "registered_users"
+    ).unwrap();
+    conf.set_default(
+        "registered_users_set.type_name", "hash:mac"
+    ).unwrap();
+    conf.set_default(
+        "registered_users_set.maxelem", 65536
+    ).unwrap();
+
+    conf
 }
 
 
 /// Return a vector of strings from an array defined in the config file
-fn config_array_str_to_vec<'a>(config_array: &'a Value) -> Vec<&'a str> {
-    match config_array {
-        &Value::Array(ref array) => {
-            let mut str_array: Vec<&'a str> = vec![];
-            for i in array.iter() {
-                str_array.push(match i {
-                    &Value::Svalue(ScalarValue::Str(ref s)) => { s }
-                    _ => { panic!("Configuration file not defined correctly") }
-                })
+fn config_array_str_to_vec(config_array: Vec<Value>) -> Vec<String> {
+    let mut str_array: Vec<String> = vec![];
+    for i in config_array {
+        str_array.push(match i.into_str() {
+            Ok(s) => s,
+            Err(_) => {
+                panic!("Configuration file not defined correctly")
             }
-            str_array
-        },
-        _ => vec![]
+        })
     }
+
+    str_array
 }
 
 
 lazy_static! {
-    static ref CONFIG: libconfig::types::Config = config_from_file();
+    static ref CONFIG: Config = config_from_file();
 
-    /// Limit the server to a certain number of threads
-    pub static ref LIMIT_THREADS: u32 = (
-        CONFIG.lookup_integer32_or("threads", 1000) as u32
-    );
-
-    /// Binary to call when spawning ipset
-    pub static ref IPSET_BIN: &'static str = CONFIG.lookup_str_or(
-        "ipset_bin", "ipset"
-    );
-
-    pub static ref LISTEN_ADDR: Vec<&'static str> = (
-        config_array_str_to_vec(
-            CONFIG.lookup("listen_addr").unwrap()
-        )
-    );
-
-    /// IPSet set to use
-    pub static ref REGISTERED_USERS_SET: SetIpset<'static> = SetIpset {
-        name: CONFIG.lookup_str_or(
-            "registered_users_set.name", "registered_users"
+    pub static ref GLOBAL_CONFIG: GlobalConfig = GlobalConfig {
+        limit_threads: CONFIG.get_int("threads").unwrap() as u32,
+        ipset_bin: CONFIG.get_str("ipset_bin").unwrap(),
+        listen_addr: config_array_str_to_vec(
+            CONFIG.get_array("listen_addr").unwrap()
         ),
-        type_name: CONFIG.lookup_str_or(
-            "registered_users_set.type_name", "hash:mac"
-        ),
-        maxelem: CONFIG.lookup_integer64_or(
-            "registered_users_set.maxelem", 65536
-        ) as u64
+        registered_users_set: SetIpset {
+            name: CONFIG.get_str(
+                "registered_users_set.name"
+            ).unwrap(),
+            type_name: CONFIG.get_str(
+                "registered_users_set.type_name"
+            ).unwrap(),
+            maxelem: CONFIG.get_int(
+                "registered_users_set.maxelem"
+            ).unwrap() as u64
+        },
     };
 }

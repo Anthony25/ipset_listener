@@ -18,9 +18,14 @@ use std::sync::{Arc, Mutex, Condvar};
 use std::thread;
 use std::time::Duration;
 
-use conf::{LIMIT_THREADS, IPSET_BIN, REGISTERED_USERS_SET, LISTEN_ADDR};
+use conf::{GLOBAL_CONFIG, SetIpset};
 use multisocketaddr::MultiSocketAddr;
 
+lazy_static! {
+    static ref REGISTERED_USERS_SET: &'static SetIpset = &(
+        GLOBAL_CONFIG.registered_users_set
+    );
+}
 static RE_MAC_PATTERN: &'static str = (
     r"(?P<mac>([a-f\d]{1,2}:){5}[a-f\d]{1,2})"
 );
@@ -46,9 +51,10 @@ fn create_ipset_set() -> Result<(), String> {
         error!("{}: {}", msg, e);
         msg
     };
-    let creation = match Command::new(*IPSET_BIN)
+    let creation = match Command::new(&GLOBAL_CONFIG.ipset_bin)
         .arg("create").arg("-exist")
-        .arg(REGISTERED_USERS_SET.name).arg(REGISTERED_USERS_SET.type_name)
+        .arg(&REGISTERED_USERS_SET.name)
+        .arg(&REGISTERED_USERS_SET.type_name)
         .arg("maxelem").arg(REGISTERED_USERS_SET.maxelem.to_string())
         .output() {
             Ok(p) => p,
@@ -77,16 +83,17 @@ fn spawn_ipset(ipset_args: &[&str]) -> Result<(), String> {
         Err(err) => return Err(err),
     }
 
-    debug!("Launch \"{} {}\"", *IPSET_BIN, ipset_args.join(" "));
+    debug!("Launch \"{} {}\"", GLOBAL_CONFIG.ipset_bin, ipset_args.join(" "));
     let panic_err = |e: &str| {
         let msg: String = format!(
             "Failed to launch \"{} {}\"",
-            *IPSET_BIN, ipset_args.join(" ")
+            GLOBAL_CONFIG.ipset_bin, ipset_args.join(" ")
         );
         error!("{}: {}", msg, e);
         msg
     };
-    let launch_cmd = match Command::new(*IPSET_BIN).args(ipset_args)
+    let launch_cmd = match Command::new(&GLOBAL_CONFIG.ipset_bin)
+        .args(ipset_args)
         .output() {
             Ok(p) => p,
             Err(err) => return Err(panic_err(err.description().trim_right())),
@@ -186,8 +193,10 @@ fn compute_response(response: &String, mut s: &TcpStream) {
                     };
                     if mac_addr != "" {
                         match spawn_ipset(
-                            &[cmd, "-exist", REGISTERED_USERS_SET.name,
-                              mac_addr]
+                            &[
+                                cmd, "-exist",
+                                &REGISTERED_USERS_SET.name, mac_addr
+                            ]
                         ) {
                             Ok(()) => { s.write(b"0\r\n").unwrap(); },
                             Err(err) => { send_error(&s, err.as_str()); },
@@ -273,7 +282,7 @@ fn listen_on_addr(addr: net::SocketAddr,
                     let &(ref lock, ref cvar) = &*nb_threads_arc;
                     let mut nb_threads = lock.lock().unwrap();
                     // If we reached the limit, wait until any thread exits
-                    while *nb_threads >= *LIMIT_THREADS {
+                    while *nb_threads >= GLOBAL_CONFIG.limit_threads {
                         nb_threads = cvar.wait(nb_threads).unwrap();
                     }
                     debug!("{}", *nb_threads);
@@ -307,7 +316,7 @@ fn main() {
     let _ = env_logger::init();
 
     let mut multi = MultiSocketAddr::new();
-    for addr in LISTEN_ADDR.iter() {
+    for addr in GLOBAL_CONFIG.listen_addr.iter() {
         multi.add(addr).unwrap();
     }
 
