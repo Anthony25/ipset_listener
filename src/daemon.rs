@@ -333,8 +333,7 @@ impl IPSetListenerDaemon {
     ///
     /// output <&str>: "ip neigh" output
     fn filter_mac(&self, output: &str) -> Result<String, String> {
-        let re_mac: Regex = Regex::new(RE_MAC_PATTERN).unwrap();
-        let mac_addr = match re_mac.captures(output) {
+        let mac_addr = match self.regexes.macaddr.captures(output) {
             Some(capt) => capt.name("mac").unwrap().as_str(),
             None => "",
         };
