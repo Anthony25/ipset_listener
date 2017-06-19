@@ -41,7 +41,7 @@ fn config_from_file() -> Config{
 }
 
 fn setup_default_values(mut conf: Config) -> Config{
-    conf.set_default("threads", 1000).unwrap();
+    conf.set_default("threads", 100).unwrap();
     conf.set_default("ipset_bin", "ipset").unwrap();
     conf.set_default(
         "listen_addr", vec![ "127.0.0.1:8000", "[::1]:8000" ]
