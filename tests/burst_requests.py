@@ -35,8 +35,9 @@ def connect2daemon(x):
     print("Connecting...")
     print("Ready.")
     client = s
-    x = b"a f8:0f:41:78:b7"
+    x = b"a 00:00:00:00:00:00"
     client.sendall(x)
+
 
 p = Pool(processes=100)
 print(p.map(connect2daemon, range(6000)))
