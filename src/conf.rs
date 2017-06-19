@@ -1,7 +1,7 @@
 
 use std::path::Path;
 use config as libconfig;
-use config::{Value, Config};
+use config::Config;
 
 static CONFIG_FILE: &'static str = "/etc/ipset_listener.conf";
 
