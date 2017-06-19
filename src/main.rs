@@ -4,6 +4,11 @@ extern crate log;
 extern crate lazy_static;
 extern crate config;
 extern crate regex;
+extern crate serde;
+
+#[macro_use]
+extern crate serde_derive;
+
 
 mod conf;
 mod multisocketaddr;
@@ -17,10 +22,11 @@ use std::sync::{Arc, Mutex, Condvar};
 use std::thread;
 use std::time::Duration;
 
-use conf::{GLOBAL_CONFIG, SetIpset};
+use conf::{Configuration, SetIpset};
 use multisocketaddr::MultiSocketAddr;
 
 lazy_static! {
+    static ref GLOBAL_CONFIG: Configuration = Configuration::new();
     static ref REGISTERED_USERS_SET: &'static SetIpset = &(
         GLOBAL_CONFIG.registered_users_set
     );
@@ -99,7 +105,7 @@ fn wait_until_free_slot(nb_threads_arc: &Arc<(Mutex<u32>, Condvar)>) {
     let &(ref lock, ref cvar) = &**nb_threads_arc;
     let mut nb_threads = lock.lock().unwrap();
     // If we reached the limit, wait until any thread exits
-    while *nb_threads >= GLOBAL_CONFIG.limit_threads {
+    while *nb_threads >= GLOBAL_CONFIG.threads {
         nb_threads = cvar.wait(nb_threads).unwrap();
     }
     debug!("{}", *nb_threads);
