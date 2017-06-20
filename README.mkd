@@ -38,6 +38,9 @@ Commands
 
   * `a <mac_address>`: add the mac address to the white-list
   * `d <mac_address>`: delete the mac address of the white-list
+  * `m <ipv4|ipv6>`: get the current mac address of an ipv4 or ipv6 address (as
+        it is aimed to be used on a router, the client must be in the ARP
+        table)
 
 
 Contributors
