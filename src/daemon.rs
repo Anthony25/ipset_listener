@@ -12,10 +12,6 @@ use conf::Configuration;
 use multisocketaddr::MultiSocketAddr;
 
 
-static RE_MAC_PATTERN: &'static str = (
-    r"(?P<mac>([a-f\d]{1,2}:){5}[a-f\d]{1,2})"
-);
-
 struct CompiledRegexes {
     daemon_proto: Regex,
     macaddr: Regex,
@@ -41,7 +37,9 @@ impl IPSetListenerDaemon {
                         r"^(?P<action>[[:alpha:]]) *(?P<arg>.*)$"
                     ).unwrap()
                 ),
-                macaddr: Regex::new(RE_MAC_PATTERN).unwrap(),
+                macaddr: Regex::new(
+                    r"(?P<mac>[^:]([a-f\d]{1,2}:){5}[a-f\d]{1,2})[^:]"
+                ).unwrap(),
             }
         }
     }
@@ -291,12 +289,13 @@ impl IPSetListenerDaemon {
     ///
     /// ip <&str>: arguments for ipset
     fn get_mac<'a>(&self, ip: &'a str) -> Result<String, String> {
-        if !Self::is_ip_addr(ip) {
-            return Err(String::from("Not an IP address"))
-        }
+        let parsed_ip = Self::parse_ip_addr(ip).unwrap();
 
         let ip_bin = "ip";
-        let ip_args = ["n", "show", "to", ip];
+        let mut ip_args = vec!["n", "show", "to", ip];
+        if parsed_ip.is_ipv6() {
+            ip_args.insert(0, "-6");
+        }
 
         debug!("Launch \"{} {}\"", ip_bin, ip_args.join(" "));
         let panic_err = |e: &str| {
@@ -344,13 +343,13 @@ impl IPSetListenerDaemon {
     }
 
 
-    /// Is an IP address ?
+    /// Parse IP address
     ///
-    /// returns bool
-    fn is_ip_addr(s: &str) -> bool {
+    /// returns parsed IP if successed
+    fn parse_ip_addr(s: &str) -> Result<IpAddr, String> {
         match s.parse::<IpAddr>() {
-            Ok(_) => return true,
-            Err(_) => return false
+            Ok(i) => return Ok(i),
+            Err(_) => return Err(String::from("Not an IP address")),
         }
     }
 }
