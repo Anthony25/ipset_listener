@@ -8,8 +8,8 @@ a set of mac addresses.
 Dependencies
 ------------
 
-  * rustc, tested with version 1.7
-  * cargo, tested with version 0.8
+  * rustc, tested with version 1.13
+  * cargo, tested with version 0.18
 
 These dependencies are needed to compile the project, but are not needed if you
 just want to run it.
