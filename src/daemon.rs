@@ -8,6 +8,7 @@ use std::sync::{Arc, Mutex, Condvar};
 use std::panic;
 use std::panic::RefUnwindSafe;
 use std::process::Command;
+use std::sync::mpsc;
 use std::time::Duration;
 
 use conf::Configuration;
@@ -20,7 +21,6 @@ struct CompiledRegexes {
 }
 
 pub struct IPSetListenerDaemon {
-    mutex_running_threads: Arc<(Mutex<u32>, Condvar)>,
     conf: Configuration,
     regexes: CompiledRegexes,
 }
@@ -31,9 +31,6 @@ impl RefUnwindSafe for IPSetListenerDaemon {}
 impl IPSetListenerDaemon {
     pub fn new(conf: Configuration) -> Self {
         IPSetListenerDaemon {
-            mutex_running_threads: Arc::new(
-                (Mutex::new(0u32), Condvar::new())
-            ),
             conf: conf,
             regexes: CompiledRegexes {
                 daemon_proto: (
@@ -49,82 +46,60 @@ impl IPSetListenerDaemon {
     }
 
     pub fn start(&self) {
-        let mut listeners = Vec::new();
         let mut multi = MultiSocketAddr::new();
         for addr in self.conf.listen_addr.iter() {
             multi.add(addr).unwrap();
         }
 
-        for addr in multi.to_socket_addrs().unwrap() {
-            listeners.push(scope(|scope| {
-                scope.spawn(|| {
-                    self.listen_on_addr(addr);
-                })
-            }));
-        }
+        scope(|scope| {
+            let (tx, rx):
+                (mpsc::Sender<TcpStream>, mpsc::Receiver<TcpStream>) =
+                mpsc::channel();
+
+            for addr in multi.to_socket_addrs().unwrap() {
+                let thread_tx = tx.clone();
+                scope.spawn(move || {
+                    self.listen_on_addr(addr, thread_tx);
+                });
+            }
+
+            for stream in rx.iter() {
+                panic::set_hook(Box::new(|_| {
+                    info!("Thread timed out");
+                }));
+
+                let _ = panic::catch_unwind(|| {
+                    self.handle_client(stream)
+                });
+            }
+        });
     }
 
     /// Create a TcpListener for the sent addr
     ///
     /// addr <SocketAddr>: Address to bind on
-    fn listen_on_addr(&self, addr: net::SocketAddr) {
+    fn listen_on_addr(&self, addr: net::SocketAddr,
+                      tx: mpsc::Sender<TcpStream>) {
         let listener = TcpListener::bind(addr).unwrap();
-        scope(|scope| {
-            for stream in listener.incoming() {
-                match stream {
-                    Ok(stream) => {
-                        // Requests should be snappy enough to never reach the
-                        // 60 seconds of timeout. If they reach it, we have
-                        // another problem somewhere else…
-                        {
-                            let timeout = Some(Duration::new(60, 0));
-                            let _ = stream.set_read_timeout(timeout);
-                            let _ = stream.set_write_timeout(timeout);
-                        }
-                        self.wait_until_free_slot();
-                        scope.spawn(|| {
-                            panic::set_hook(Box::new(|_| {
-                                info!("Thread timed out");
-                            }));
-
-                            let _ = panic::catch_unwind(|| {
-                                self.handle_client(stream)
-                            });
-                            self.decrement_threads()
-                        });
-                    },
-                    Err(_) => {
-                        break
+        for stream in listener.incoming() {
+            match stream {
+                Ok(stream) => {
+                    // Requests should be snappy enough to never reach the
+                    // 60 seconds of timeout. If they reach it, we have
+                    // another problem somewhere else…
+                    {
+                        let timeout = Some(Duration::new(10, 0));
+                        let _ = stream.set_read_timeout(timeout);
+                        let _ = stream.set_write_timeout(timeout);
                     }
+                    tx.send(stream).unwrap();
+                },
+                Err(_) => {
+                    break
                 }
             }
-        });
+        }
         drop(listener);
-    }
-
-
-    fn wait_until_free_slot(&self) {
-        let &(ref lock, ref cvar) = &*self.mutex_running_threads;
-        let mut nb_threads = lock.lock().unwrap();
-        // If we reached the limit, wait until any thread exits
-        while *nb_threads >= self.conf.threads {
-            nb_threads = cvar.wait(nb_threads).unwrap();
-        }
-        debug!("{} threads running", *nb_threads);
-        *nb_threads += 1;
-    }
-
-
-    fn decrement_threads(&self) {
-        let &(ref lock, ref cvar) = &*self.mutex_running_threads;
-        {
-            let mut nb_threads = lock.lock().unwrap();
-            *nb_threads -= 1;
-            debug!("{} threads running", *nb_threads);
-        }
-        // Notifies one waiting thread that the current one is
-        // exiting
-        cvar.notify_one();
     }
 
 

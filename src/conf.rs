@@ -17,8 +17,6 @@ pub struct SetIpset {
 /// Global configuration
 #[derive(Deserialize)]
 pub struct Configuration {
-    /// Limit the server to a certain number of threads
-    pub threads: u32,
     /// Binary to call when spawning ipset
     pub ipset_bin: String,
     /// Address to listen on
@@ -51,7 +49,6 @@ impl Configuration {
     }
 
     fn setup_default_values_to_config(mut conf: Config) -> Config{
-        conf.set_default("threads", 100).unwrap();
         conf.set_default("ipset_bin", "ipset").unwrap();
         conf.set_default(
             "listen_addr", vec![ "127.0.0.1:8000", "[::1]:8000" ]
