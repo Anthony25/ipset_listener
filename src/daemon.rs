@@ -5,6 +5,8 @@ use std::error::Error;
 use std::io::prelude::{Read, Write};
 use std::net::{self, IpAddr, TcpStream, TcpListener, ToSocketAddrs};
 use std::sync::{Arc, Mutex, Condvar};
+use std::panic;
+use std::panic::RefUnwindSafe;
 use std::process::Command;
 use std::time::Duration;
 
@@ -24,6 +26,8 @@ pub struct IPSetListenerDaemon {
 }
 
 
+impl RefUnwindSafe for IPSetListenerDaemon {}
+
 impl IPSetListenerDaemon {
     pub fn new(conf: Configuration) -> Self {
         IPSetListenerDaemon {
@@ -38,7 +42,7 @@ impl IPSetListenerDaemon {
                     ).unwrap()
                 ),
                 macaddr: Regex::new(
-                    r"(?P<mac>[^:]([a-f\d]{1,2}:){5}[a-f\d]{1,2})[^:]"
+                    r"(?P<mac>[^:\d[:alpha:]]([a-f\d]{1,2}:){5}[a-f\d]{1,2})[^:\d[:alpha:]]"
                 ).unwrap(),
             }
         }
@@ -65,29 +69,36 @@ impl IPSetListenerDaemon {
     /// addr <SocketAddr>: Address to bind on
     fn listen_on_addr(&self, addr: net::SocketAddr) {
         let listener = TcpListener::bind(addr).unwrap();
-        for stream in listener.incoming() {
-            match stream {
-                Ok(stream) => {
-                    // Requests should be snappy enough to never reach the 60
-                    // seconds of timeout. If they reach it, we have another
-                    // problem somewhere else…
-                    {
-                        let timeout = Some(Duration::new(60, 0));
-                        let _ = stream.set_read_timeout(timeout);
-                        let _ = stream.set_write_timeout(timeout);
-                    }
-                    self.wait_until_free_slot();
-                    scope(|scope| {
+        scope(|scope| {
+            for stream in listener.incoming() {
+                match stream {
+                    Ok(stream) => {
+                        // Requests should be snappy enough to never reach the
+                        // 60 seconds of timeout. If they reach it, we have
+                        // another problem somewhere else…
+                        {
+                            let timeout = Some(Duration::new(60, 0));
+                            let _ = stream.set_read_timeout(timeout);
+                            let _ = stream.set_write_timeout(timeout);
+                        }
+                        self.wait_until_free_slot();
                         scope.spawn(|| {
-                            self.decrement_threads_and_handle_client(stream)
+                            panic::set_hook(Box::new(|_| {
+                                info!("Thread timed out");
+                            }));
+
+                            let _ = panic::catch_unwind(|| {
+                                self.handle_client(stream)
+                            });
+                            self.decrement_threads()
                         });
-                    });
-                },
-                Err(_) => {
-                    break
+                    },
+                    Err(_) => {
+                        break
+                    }
                 }
             }
-        }
+        });
         drop(listener);
     }
 
@@ -99,19 +110,17 @@ impl IPSetListenerDaemon {
         while *nb_threads >= self.conf.threads {
             nb_threads = cvar.wait(nb_threads).unwrap();
         }
-        debug!("{}", *nb_threads);
+        debug!("{} threads running", *nb_threads);
         *nb_threads += 1;
     }
 
 
-    fn decrement_threads_and_handle_client(&self, stream: TcpStream) {
+    fn decrement_threads(&self) {
         let &(ref lock, ref cvar) = &*self.mutex_running_threads;
-        info!("New client…");
-        self.handle_client(&stream);
         {
             let mut nb_threads = lock.lock().unwrap();
             *nb_threads -= 1;
-            debug!("{}", *nb_threads);
+            debug!("{} threads running", *nb_threads);
         }
         // Notifies one waiting thread that the current one is
         // exiting
@@ -122,22 +131,23 @@ impl IPSetListenerDaemon {
     /// Handle a new client and call to compute the response
     ///
     /// s <TcpStream>: client's stream
-    fn handle_client(&self, s: &TcpStream) {
+    fn handle_client(&self, s: TcpStream) {
+        info!("New client…");
         let mut response: String = String::new();
-        for b_result in s.bytes() {
+        for b_result in (&s).bytes() {
             let b: u8 = b_result.unwrap();
             response.push(b as char);
             // End of line. Parse the received request.
             if b == 10 {
                 response = String::from(response.trim());
-                self.compute_response(&response, s);
+                self.compute_response(&response, &s);
                 response.clear();
             }
         }
 
         if response.len() > 0 {
             response = String::from(response.trim());
-            self.compute_response(&response, s);
+            self.compute_response(&response, &s);
         }
     }
 
