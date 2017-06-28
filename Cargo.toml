@@ -1,6 +1,6 @@
 [package]
 name = "ipset_listener"
-version = "1.0.0"
+version = "1.0.1"
 authors = ["Anthony Ruhier <anthony.ruhier@gmail.com>"]
 
 [dependencies]
