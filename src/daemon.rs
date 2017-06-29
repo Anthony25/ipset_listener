@@ -38,7 +38,7 @@ impl IPSetListenerDaemon {
                     ).unwrap()
                 ),
                 macaddr: Regex::new(
-                    r"(?P<mac>[^:\d[:alpha:]]([a-f\d]{1,2}:){5}[a-f\d]{1,2})[^:\d[:alpha:]]"
+                    r"(\s*|^)(?P<mac>([A-Fa-f\d]{1,2}:){5}[A-Fa-f\d]{1,2})(\s*|$)"
                 ).unwrap(),
             }
         }
