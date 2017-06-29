@@ -4,7 +4,6 @@ use crossbeam::scope;
 use std::error::Error;
 use std::io::prelude::{Read, Write};
 use std::net::{self, IpAddr, TcpStream, TcpListener, ToSocketAddrs};
-use std::sync::{Arc, Mutex, Condvar};
 use std::panic;
 use std::panic::RefUnwindSafe;
 use std::process::Command;
